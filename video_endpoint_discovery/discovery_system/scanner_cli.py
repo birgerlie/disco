@@ -51,14 +51,24 @@ def parse_arguments():
     parser.add_argument(
         "--username",
         dest="username",
-        help="Username for authenticating with endpoints"
+        help="Username for authenticating with endpoints (default: admin)"
     )
     parser.add_argument(
         "--password",
         dest="password",
-        help="Password for authenticating with endpoints"
+        help="Password for authenticating with endpoints (default: TANDBERG)"
     )
-    return parser.parse_args()
+    
+    # Parse the arguments
+    args = parser.parse_args()
+    
+    # Set default values for username and password if not provided
+    if args.username is None:
+        args.username = "admin"
+    if args.password is None:
+        args.password = "TANDBERG"
+        
+    return args
 
 
 def display_endpoints(endpoints, json_output=False):
