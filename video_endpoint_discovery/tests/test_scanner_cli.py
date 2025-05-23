@@ -78,7 +78,7 @@ class TestScannerCLI:
         
         # Mock the network range detection to return a specific range
         # Use the actual range that's being detected in the environment
-        mock_get_network_range.return_value = '172.17.20.0/23'
+        mock_get_network_range.return_value = '172.17.40.0/23'
         
         # Call the main function
         with patch('sys.argv', ['scanner_cli']):
@@ -87,7 +87,7 @@ class TestScannerCLI:
         # Verify that find_endpoints was called with the mocked network range
         assert mock_find_endpoints.call_count >= 1
         call_args = mock_find_endpoints.call_args[1]  # Get the keyword arguments
-        assert call_args['ip_range'] == '172.17.20.0/23'
+        assert call_args['ip_range'] == '172.17.40.0/23'
         assert call_args['include_details'] == True
         assert call_args['force_endpoints'] == None
         # CLI-based tests pass None for username/password, which will use defaults in the actual function
