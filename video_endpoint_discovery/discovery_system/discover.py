@@ -1,4 +1,5 @@
 from discovery_system.network_utils import scan_network
+from discovery_system.endpoint_details import extract_endpoint_details
 
 def find_endpoints(ip_range=None, include_details=True, force_endpoints=None, username="admin", password="TANDBERG"):
     """
@@ -48,22 +49,25 @@ def get_endpoint_details(endpoint_ip, username="admin", password="TANDBERG"):
     Returns:
         dict: Detailed information about the endpoint, or None if not found
     """
-    # In a production implementation, this would query the endpoint
-    # for detailed information using its API (e.g., HTTP, SSH, SNMP)
-    
-    # For now, we'll just scan it and add placeholder detailed info
+    # First scan to detect the endpoint
     all_devices = scan_network(f"{endpoint_ip}/32", username=username, password=password)
     
     if not all_devices:
         return None
         
-    endpoint = all_devices[0]
+    basic_endpoint = all_devices[0]
     
-    # Add some example detailed information
-    if endpoint.get('type') == 'video_endpoint':
-        endpoint['model'] = 'Unknown Model'  # Would be determined from device query
-        endpoint['status'] = 'online'
-        endpoint['last_meeting'] = None
-        endpoint['capabilities'] = ['video', 'audio']
+    # Check if it's a video endpoint
+    if basic_endpoint.get('type') == 'video_endpoint':
+        # Extract detailed information using the endpoint_details module
+        print(f"Extracting detailed information from endpoint at {endpoint_ip}...")
+        detailed_endpoint = extract_endpoint_details(basic_endpoint, username, password)
+        
+        # Add status and capabilities information
+        detailed_endpoint['status'] = 'online'
+        detailed_endpoint['last_meeting'] = None
+        detailed_endpoint['capabilities'] = ['video', 'audio']
+        
+        return detailed_endpoint
     
-    return endpoint
+    return basic_endpoint

@@ -7,6 +7,8 @@ This project aims to discover video conferencing endpoints on a local network. I
 - Automated scanning of local networks for video conferencing endpoints
 - Detection based on common endpoint ports (80, 443, 5060, 5061, 1720)
 - Authentication using default or custom credentials
+- Extraction of detailed endpoint information (manufacturer, model, software version, etc.)
+- Support for multiple manufacturers (Cisco, Polycom, TANDBERG, and generic endpoints)
 - Ability to force specific IPs to be classified as endpoints for testing
 - Simplified or detailed output formats including JSON
 
@@ -20,7 +22,7 @@ This project aims to discover video conferencing endpoints on a local network. I
 
 2. Install dependencies:
    ```bash
-   pip install requests pytest
+   pip install requests pytest beautifulsoup4
    ```
 
 ## Running the discovery
@@ -67,6 +69,28 @@ python -m discovery_system.scanner_cli --force-endpoint 192.168.1.100
 # Combine multiple options
 python -m discovery_system.scanner_cli --range 10.0.0.0/24 --json --username admin --password cisco123
 ```
+
+### Endpoint Details Extraction
+
+The system can extract detailed information from discovered endpoints, including:
+
+- Manufacturer identification (Cisco, Polycom, TANDBERG, etc.)
+- Model information
+- Software version
+- URI for accessing the device
+- Other device-specific details (serial numbers, MAC addresses, etc.)
+
+This information is automatically included in the output when endpoints are discovered:
+
+```bash
+# Get detailed information about all endpoints on the network
+python -m discovery_system.scanner_cli --json
+
+# Get details for a specific endpoint
+python -m discovery_system.scanner_cli --range 192.168.1.100/32 --json
+```
+
+The extraction system is designed to be abstract and support multiple manufacturers with their unique web interfaces and data formats.
 
 ## Running tests
 
