@@ -102,33 +102,134 @@ def parse_cisco_details(html_content):
         'manufacturer': 'Cisco'
     }
     
+    # Use BeautifulSoup for more robust parsing
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_content, 'html.parser')
+    except ImportError:
+        # Fallback to regex if BeautifulSoup is not available
+        pass
+    
     # Parse model from title
     title_match = re.search(r'<title>(?:Cisco)?\s*(?:Webex)?\s*(.*?)</title>', html_content, re.IGNORECASE)
     if title_match:
         model = title_match.group(1).strip()
-        if "webex" not in model.lower():
+        # Don't prepend 'Webex' if it's a TelePresence model or already has Webex
+        if "webex" not in model.lower() and "telepresence" not in model.lower():
             model = f"Webex {model}"
         details['model'] = model
     
-    # Parse software version
+    # Parse software version - using multiple patterns to match different Cisco endpoints
+    # Pattern 1: Standard span class
     sw_version_match = re.search(r'<span class="sw-version">(.*?)</span>', html_content)
     if sw_version_match:
         details['sw_version'] = sw_version_match.group(1).strip()
-    else:
-        # Alternative pattern
-        alt_version = re.search(r'Software Version:\s*</td><td[^>]*>(.*?)</td>', html_content)
+    
+    # Pattern 2: Table layout with Software Version label
+    if 'sw_version' not in details:
+        alt_version = re.search(r'Software Version:?\s*</td>\s*<td[^>]*>(.*?)</td>', html_content, re.IGNORECASE)
         if alt_version:
             details['sw_version'] = alt_version.group(1).strip()
     
-    # Parse serial number if available
+    # Pattern 3: Modern label/value with "Software:" label
+    if 'sw_version' not in details:
+        sw_label_match = re.search(r'<td[^>]*class="[^"]*label[^"]*"[^>]*>\s*Software:?\s*</td>\s*<td[^>]*class="[^"]*value[^"]*"[^>]*>\s*(.*?)\s*</td>', html_content, re.IGNORECASE)
+        if sw_label_match:
+            details['sw_version'] = sw_label_match.group(1).strip()
+            
+    # Pattern 4: Info blocks with label/value spans
+    if 'sw_version' not in details:
+        sw_block_match = re.search(r'<span[^>]*class="[^"]*info-label[^"]*"[^>]*>\s*Software:?\s*</span>\s*<span[^>]*class="[^"]*info-value[^"]*"[^>]*>\s*(.*?)\s*</span>', html_content, re.IGNORECASE)
+        if sw_block_match:
+            details['sw_version'] = sw_block_match.group(1).strip()
+    
+    # Pattern 5: Paragraph format (older models)
+    if 'sw_version' not in details:
+        p_version_match = re.search(r'<p>\s*Software version:?\s*(.*?)\s*</p>', html_content, re.IGNORECASE)
+        if p_version_match:
+            details['sw_version'] = p_version_match.group(1).strip()
+    
+    # Parse serial number using multiple patterns
+    # Pattern 1: Standard div class
     serial_match = re.search(r'<div class="serial-number">(.*?)</div>', html_content)
     if serial_match:
         details['serial'] = serial_match.group(1).strip()
     
-    # Parse MAC address if available
+    # Pattern 2: Table layout with Serial Number label
+    if 'serial' not in details:
+        alt_serial = re.search(r'Serial Number:?\s*</td>\s*<td[^>]*>(.*?)</td>', html_content, re.IGNORECASE)
+        if alt_serial:
+            details['serial'] = alt_serial.group(1).strip()
+    
+    # Pattern 3: Modern label/value with "Serial:" or "Serial Number:" label
+    if 'serial' not in details:
+        serial_label_match = re.search(r'<td[^>]*class="[^"]*label[^"]*"[^>]*>\s*Serial(?: Number)?:?\s*</td>\s*<td[^>]*class="[^"]*value[^"]*"[^>]*>\s*(.*?)\s*</td>', html_content, re.IGNORECASE)
+        if serial_label_match:
+            details['serial'] = serial_label_match.group(1).strip()
+    
+    # Pattern 4: Info blocks with label/value spans
+    if 'serial' not in details:
+        serial_block_match = re.search(r'<span[^>]*class="[^"]*info-label[^"]*"[^>]*>\s*Serial(?: Number)?:?\s*</span>\s*<span[^>]*class="[^"]*info-value[^"]*"[^>]*>\s*(.*?)\s*</span>', html_content, re.IGNORECASE)
+        if serial_block_match:
+            details['serial'] = serial_block_match.group(1).strip()
+    
+    # Pattern 5: Paragraph format (older models)
+    if 'serial' not in details:
+        p_serial_match = re.search(r'<p>\s*Serial number:?\s*(.*?)\s*</p>', html_content, re.IGNORECASE)
+        if p_serial_match:
+            details['serial'] = p_serial_match.group(1).strip()
+    
+    # Parse MAC address using multiple patterns
+    # Pattern 1: Standard div class
     mac_match = re.search(r'<div class="mac-address">(.*?)</div>', html_content)
     if mac_match:
         details['mac_address'] = mac_match.group(1).strip()
+    
+    # Pattern 2: Table layout with MAC Address label
+    if 'mac_address' not in details:
+        alt_mac = re.search(r'MAC Address:?\s*</td>\s*<td[^>]*>(.*?)</td>', html_content, re.IGNORECASE)
+        if alt_mac:
+            details['mac_address'] = alt_mac.group(1).strip()
+    
+    # Pattern 3: Modern label/value with "MAC Address:" label
+    if 'mac_address' not in details:
+        mac_label_match = re.search(r'<td[^>]*class="[^"]*label[^"]*"[^>]*>\s*MAC Address:?\s*</td>\s*<td[^>]*class="[^"]*value[^"]*"[^>]*>\s*(.*?)\s*</td>', html_content, re.IGNORECASE)
+        if mac_label_match:
+            details['mac_address'] = mac_label_match.group(1).strip()
+    
+    # Pattern 4: Info blocks with label/value spans
+    if 'mac_address' not in details:
+        mac_block_match = re.search(r'<span[^>]*class="[^"]*info-label[^"]*"[^>]*>\s*MAC Address:?\s*</span>\s*<span[^>]*class="[^"]*info-value[^"]*"[^>]*>\s*(.*?)\s*</span>', html_content, re.IGNORECASE)
+        if mac_block_match:
+            details['mac_address'] = mac_block_match.group(1).strip()
+    
+    # Try to enhance parsing with BeautifulSoup if available and if we're missing info
+    if 'BeautifulSoup' in locals() and (not all(k in details for k in ['sw_version', 'serial']) or details.get('sw_version') == 'Unknown'):
+        try:
+            # Look for software version if not found
+            if 'sw_version' not in details:
+                # Try to find elements containing "Software" or "Version"
+                software_elements = soup.find_all(string=re.compile(r'(?:Software|Version)', re.IGNORECASE))
+                for element in software_elements:
+                    parent = element.parent
+                    if parent and parent.name in ['td', 'span', 'div', 'p']:
+                        next_el = parent.find_next_sibling('td') or parent.find_next_sibling('span')
+                        if next_el and next_el.string:
+                            details['sw_version'] = next_el.string.strip()
+                            break
+            
+            # Look for serial if not found
+            if 'serial' not in details:
+                serial_elements = soup.find_all(string=re.compile(r'Serial', re.IGNORECASE))
+                for element in serial_elements:
+                    parent = element.parent
+                    if parent and parent.name in ['td', 'span', 'div', 'p']:
+                        next_el = parent.find_next_sibling('td') or parent.find_next_sibling('span')
+                        if next_el and next_el.string:
+                            details['serial'] = next_el.string.strip()
+                            break
+        except Exception as e:
+            print(f"DEBUG: Error using BeautifulSoup for enhanced parsing: {str(e)}")
     
     return details
 
