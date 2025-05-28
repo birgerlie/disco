@@ -190,10 +190,11 @@ def scan_ip(ip, ports=VIDEO_ENDPOINT_PORTS, timeout=0.5, force_endpoint=False, u
     
     return None
 
-def scan_network_optimized(ip_range=None, max_workers=20, force_endpoints=None, username="admin", password="TANDBERG"):
+def scan_network(ip_range=None, max_workers=20, force_endpoints=None, username="admin", password="TANDBERG"):
     """
-    Optimized scan that first checks for SIP ports and then only performs detailed
-    scan on IPs that respond to SIP ports.
+    Scan the network for devices using a two-phase approach for efficiency:
+    1. First check for SIP ports only
+    2. Then perform detailed scans only on IPs that respond to SIP ports
     
     Args:
         ip_range (str): CIDR notation of IP range to scan (e.g. '192.168.1.0/24')
@@ -322,108 +323,4 @@ def scan_network_optimized(ip_range=None, max_workers=20, force_endpoints=None, 
     
     return devices
 
-
-def scan_network(ip_range=None, max_workers=20, force_endpoints=None, username="admin", password="TANDBERG"):
-    """
-    Scan the local network for devices, with focus on video endpoints
-    
-    Args:
-        ip_range (str): CIDR notation of IP range to scan (e.g. '192.168.1.0/24')
-                       If None, tries to determine the local network
-        max_workers (int): Maximum number of concurrent scanning threads
-        force_endpoints (list): List of IPs to force classify as video endpoints
-    
-    Returns:
-        list: List of dictionaries containing device information
-    """
-    """
-    Scan the local network for devices, with focus on video endpoints
-    
-    Args:
-        ip_range (str): CIDR notation of IP range to scan (e.g. '192.168.1.0/24')
-                       If None, tries to determine the local network
-        max_workers (int): Maximum number of concurrent scanning threads
-    
-    Returns:
-        list: List of dictionaries containing device information
-    """
-    print("Scanning network...")
-    
-    print(f"DEBUG: Scanning IP range: {ip_range}")
-    print(f"DEBUG: Using {max_workers} worker threads")
-
-    # If no IP range specified, try to determine local network
-    if not ip_range:
-        print("DEBUG: No IP range specified, attempting to determine local network")
-        # Get local IP
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            # Doesn't need to be reachable
-            s.connect(('10.255.255.255', 1))
-            local_ip = s.getsockname()[0]
-            print(f"DEBUG: Detected local IP: {local_ip}")
-        except Exception as e:
-            print(f"DEBUG: Error detecting local IP - {str(e)}")
-            local_ip = '127.0.0.1'
-            print("DEBUG: Falling back to localhost (127.0.0.1)")
-        finally:
-            s.close()
-        
-        # Assume a /24 network
-        ip_parts = local_ip.split('.')
-        ip_range = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.0/24"
-        print(f"DEBUG: Determined network range: {ip_range}")
-    
-    # Parse the IP range
-    try:
-        network = ipaddress.ip_network(ip_range, strict=False)
-        print(f"DEBUG: Successfully parsed network: {network}")
-        host_count = sum(1 for _ in network.hosts())
-        print(f"DEBUG: Network contains {host_count} host addresses to scan")
-        
-        # Check if we should use the optimized scanning method
-        if os.environ.get('USE_OPTIMIZED_SCAN', '').lower() == 'true':
-            print("DEBUG: Using optimized scanning method")
-            return scan_network_optimized(ip_range, max_workers, force_endpoints, username, password)
-    except ValueError as e:
-        print(f"Invalid IP range: {ip_range} - {str(e)}")
-        return []
-    
-    # Handle force_endpoints parameter
-    if force_endpoints is None:
-        force_endpoints = []
-    else:
-        print(f"DEBUG: Will force classify these IPs as endpoints: {force_endpoints}")
-        
-    # Log credentials being used (masking password)
-    print(f"DEBUG: Using credentials - Username: {username}, Password: {'*' * len(password)}")
-    
-    # Scan the network with a thread pool for efficiency
-    devices = []
-    print(f"DEBUG: Starting network scan with {max_workers} concurrent workers")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        print("DEBUG: Creating scan tasks...")
-        future_to_ip = {executor.submit(
-            scan_ip, 
-            str(ip), 
-            force_endpoint=str(ip) in force_endpoints,
-            username=username,
-            password=password
-        ): ip for ip in network.hosts()}
-        print(f"DEBUG: Submitted {len(future_to_ip)} scan tasks")
-        completed = 0
-        for future in concurrent.futures.as_completed(future_to_ip):
-            ip = future_to_ip[future]
-            completed += 1
-            if completed % 10 == 0:
-                print(f"DEBUG: Progress: {completed}/{len(future_to_ip)} IPs scanned ({completed/len(future_to_ip)*100:.1f}%)")
-            try:
-                result = future.result()
-                if result:
-                    print(f"DEBUG: Found device at {ip}")
-                    devices.append(result)
-            except Exception as e:
-                print(f"DEBUG: Error processing scan result for {ip} - {str(e)}")
-    
-    return devices
 

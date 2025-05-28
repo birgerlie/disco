@@ -48,11 +48,7 @@ def parse_arguments():
         action="append",
         help="Force specific IP to be classified as a video endpoint (can be used multiple times)"
     )
-    parser.add_argument(
-        "--optimized",
-        action="store_true",
-        help="Use optimized scanning that first checks for SIP ports to speed up discovery"
-    )
+    # Removed --optimized flag as all scans now use the optimized approach by default
     parser.add_argument(
         "--username",
         dest="username",
@@ -123,10 +119,9 @@ def main():
         ip_range = get_local_network_range()
         print(f"Auto-detected network range: {ip_range}")
         
-    # Enable optimized scanning if requested
-    if args.optimized:
-        print("Using optimized scanning mode (checking SIP ports first)")
-        os.environ['USE_OPTIMIZED_SCAN'] = 'true'
+    # All scans now use the optimized approach by default
+    print("Using two-phase scanning (checking SIP ports first for better performance)")
+
     
     # Scan for endpoints
     print(f"Scanning for video endpoints on {ip_range}...")

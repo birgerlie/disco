@@ -10,13 +10,13 @@ from unittest.mock import patch, MagicMock, call
 # Add the parent directory to the path so we can import discovery_system modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from discovery_system.network_utils import scan_network_optimized
+from discovery_system.network_utils import scan_network
 
 
-class TestOptimizedScan:
+class TestScanNetwork:
     """Tests for the optimized scanning functionality."""
     
-    def test_two_phase_scan(self):
+    def test_two_phase_scanning(self):
         """Test that the optimized scan works in two phases as expected."""
         # Create a test IP range
         test_range = "192.168.1.0/28"  # 16 IPs for testing
@@ -84,8 +84,8 @@ class TestOptimizedScan:
                 if 5060 in ports and 80 not in ports \
                 else mock_scan_ip_second_phase(ip, ports, timeout, **kwargs)
             
-            # Run the optimized scanner
-            result = scan_network_optimized(test_range)
+            # Run the scanner
+            result = scan_network(test_range)
             
             # Verify the function was called correctly
             assert mock_scan_ip.call_count > 0
