@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from discovery_system.discover import find_endpoints, get_endpoint_details
 from discovery_system.network_utils import scan_network
+from discovery_system.endpoint_classification import classify_endpoints
 
 
 class TestEndpointDiscovery:
@@ -24,7 +25,8 @@ class TestEndpointDiscovery:
         mock_scan.assert_called_once()
     
     @patch('discovery_system.discover.scan_network')
-    def test_find_endpoints_filters_video_endpoints(self, mock_scan):
+    @patch('discovery_system.discover.classify_endpoints')
+    def test_find_endpoints_filters_video_endpoints(self, mock_classify, mock_scan):
         """Test that find_endpoints filters video endpoints from scan results"""
         # Mock network scan returning various devices
         mock_scan.return_value = [
@@ -34,12 +36,30 @@ class TestEndpointDiscovery:
             {'ip': '192.168.1.13', 'type': 'computer'}
         ]
         
+        # Mock classify_endpoints to return the endpoints with preserved names
+        mock_classify.side_effect = lambda endpoints, **kwargs: [
+            {
+                **endpoint,
+                'manufacturer': 'Cisco',
+                'model': f'Test Model for {endpoint["ip"]}',
+                'status': 'online',
+                'capabilities': ['video', 'audio']
+            } for endpoint in endpoints
+        ]
+        
         result = find_endpoints()
         
         # Should only return the video endpoints
         assert len(result) == 2
         assert result[0]['name'] == 'Meeting Room 1'
         assert result[1]['name'] == 'Meeting Room 2'
+        
+        # Check that classify_endpoints was called with the correct arguments
+        expected_endpoints = [
+            {'ip': '192.168.1.10', 'type': 'video_endpoint', 'name': 'Meeting Room 1'},
+            {'ip': '192.168.1.12', 'type': 'video_endpoint', 'name': 'Meeting Room 2'}
+        ]
+        mock_classify.assert_called_once()
     
     @patch('discovery_system.discover.scan_network')
     def test_find_endpoints_simplified_output(self, mock_scan):
@@ -63,7 +83,8 @@ class TestEndpointDiscovery:
         assert 'hostname' not in result[0]
     
     @patch('discovery_system.discover.scan_network')
-    def test_get_endpoint_details_returns_details(self, mock_scan):
+    @patch('discovery_system.discover.classify_endpoints')
+    def test_get_endpoint_details_returns_details(self, mock_classify, mock_scan):
         """Test that get_endpoint_details returns endpoint details"""
         # Mock a successful scan result
         endpoint_ip = '192.168.1.10'
@@ -77,12 +98,32 @@ class TestEndpointDiscovery:
             }
         ]
         
+        # Mock classify_endpoints to return detailed endpoint info
+        mock_classify.return_value = [
+            {
+                'ip': endpoint_ip,
+                'type': 'video_endpoint',
+                'name': 'Meeting Room 1',
+                'hostname': 'meetingroom1.local',
+                'open_ports': [80, 443, 5060],
+                'manufacturer': 'Cisco',
+                'model': 'Webex Room Kit',
+                'sw_version': '10.15.1',
+                'serial': 'ABC123',
+                'mac_address': '00:11:22:33:44:55',
+                'status': 'online',
+                'capabilities': ['video', 'audio']
+            }
+        ]
+        
         result = get_endpoint_details(endpoint_ip)
         
         assert result is not None
         assert result['ip'] == endpoint_ip
         assert result['type'] == 'video_endpoint'
-        assert 'model' in result
+        assert result['name'] == 'Meeting Room 1'
+        assert result['model'] == 'Webex Room Kit'
+        assert result['manufacturer'] == 'Cisco'
         assert 'status' in result
         assert 'capabilities' in result
     
@@ -144,9 +185,15 @@ class TestNetworkUtils:
         )
         
     @patch('discovery_system.discover.scan_network')
-    def test_find_endpoints_passes_credentials(self, mock_scan):
-        """Test that find_endpoints passes credentials to scan_network"""
-        mock_scan.return_value = []
+    @patch('discovery_system.discover.classify_endpoints')
+    def test_find_endpoints_passes_credentials(self, mock_classify, mock_scan):
+        """Test that find_endpoints passes credentials to scan_network and classify_endpoints"""
+        mock_scan.return_value = [
+            {'ip': '192.168.1.10', 'type': 'video_endpoint', 'name': 'Test Endpoint'}
+        ]
+        mock_classify.return_value = [
+            {'ip': '192.168.1.10', 'type': 'video_endpoint', 'name': 'Test Endpoint', 'model': 'Test'}
+        ]
         
         # Call find_endpoints with credentials
         find_endpoints(username='admin', password='TANDBERG')
@@ -155,6 +202,14 @@ class TestNetworkUtils:
         mock_scan.assert_called_with(
             None, 
             force_endpoints=None, 
+            username='admin', 
+            password='TANDBERG'
+        )
+        
+        # Verify that classify_endpoints was called with credentials
+        mock_classify.assert_called_with(
+            endpoints=mock_scan.return_value,
+            num_workers=4,
             username='admin', 
             password='TANDBERG'
         )
