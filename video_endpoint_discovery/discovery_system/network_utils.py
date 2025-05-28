@@ -3,6 +3,7 @@ import ipaddress
 import concurrent.futures
 import requests
 import urllib3
+import os
 
 # Disable SSL warnings - in a production environment, proper certificate handling would be implemented
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -19,6 +20,9 @@ except ImportError:
 
 # Common ports used by video conferencing endpoints
 VIDEO_ENDPOINT_PORTS = [80, 443, 5060, 5061, 1720]  # HTTP, HTTPS, SIP, H.323
+
+# SIP ports only for first-phase scanning
+SIP_PORTS = [5060, 5061]  # SIP, SIP over TLS
 
 
 def get_local_network_range():
@@ -186,6 +190,139 @@ def scan_ip(ip, ports=VIDEO_ENDPOINT_PORTS, timeout=0.5, force_endpoint=False, u
     
     return None
 
+def scan_network_optimized(ip_range=None, max_workers=20, force_endpoints=None, username="admin", password="TANDBERG"):
+    """
+    Optimized scan that first checks for SIP ports and then only performs detailed
+    scan on IPs that respond to SIP ports.
+    
+    Args:
+        ip_range (str): CIDR notation of IP range to scan (e.g. '192.168.1.0/24')
+                       If None, tries to determine the local network
+        max_workers (int): Maximum number of concurrent scanning threads
+        force_endpoints (list): List of IPs to force classify as video endpoints
+        username (str): Username for authenticating with endpoints
+        password (str): Password for authenticating with endpoints
+    
+    Returns:
+        list: List of dictionaries containing device information
+    """
+    print("Starting optimized network scan...")
+    
+    # If no IP range specified, try to determine local network
+    if not ip_range:
+        print("DEBUG: No IP range specified, attempting to determine local network")
+        ip_range = get_local_network_range()
+        print(f"DEBUG: Determined network range: {ip_range}")
+    
+    # Parse the IP range
+    try:
+        network = ipaddress.ip_network(ip_range, strict=False)
+        print(f"DEBUG: Successfully parsed network: {network}")
+        host_count = sum(1 for _ in network.hosts())
+        print(f"DEBUG: Network contains {host_count} host addresses to scan")
+    except ValueError as e:
+        print(f"Invalid IP range: {ip_range} - {str(e)}")
+        return []
+    
+    # Handle force_endpoints parameter
+    if force_endpoints is None:
+        force_endpoints = []
+    else:
+        print(f"DEBUG: Will force classify these IPs as endpoints: {force_endpoints}")
+    
+    # Log credentials being used (masking password)
+    print(f"DEBUG: Using credentials - Username: {username}, Password: {'*' * len(password)}")
+    
+    # Phase 1: Scan the network for SIP ports only
+    print("DEBUG: Phase 1 - Scanning for SIP ports only")
+    sip_responsive_ips = []
+    
+    # Track progress
+    total_ips = host_count
+    completed = 0
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Create tasks for first phase (SIP ports only)
+        print("DEBUG: Creating SIP scan tasks...")
+        future_to_ip = {}
+        for ip in network.hosts():
+            str_ip = str(ip)
+            # Always include forced endpoints in the second phase
+            if str_ip in force_endpoints:
+                sip_responsive_ips.append(str_ip)
+                continue
+                
+            # Submit scan tasks for all other IPs
+            future = executor.submit(
+                scan_ip, 
+                str_ip, 
+                ports=SIP_PORTS,  # Only check SIP ports in first phase
+                timeout=0.5,
+                force_endpoint=False,
+                username=username,
+                password=password
+            )
+            future_to_ip[future] = str_ip
+        
+        print(f"DEBUG: Submitted {len(future_to_ip)} SIP scan tasks")
+        
+        # Process results as they complete
+        for future in concurrent.futures.as_completed(future_to_ip):
+            ip = future_to_ip[future]
+            completed += 1
+            if completed % 10 == 0:
+                print(f"DEBUG: Progress: {completed}/{total_ips} IPs scanned for SIP ({completed/total_ips*100:.1f}%)")
+            try:
+                result = future.result()
+                if result:
+                    print(f"DEBUG: Found SIP response at {ip}")
+                    sip_responsive_ips.append(ip)
+            except Exception as e:
+                print(f"DEBUG: Error processing SIP scan result for {ip} - {str(e)}")
+    
+    print(f"DEBUG: Phase 1 complete. Found {len(sip_responsive_ips)} IPs responding to SIP")
+    
+    # Phase 2: Detailed scan of IPs that responded to SIP
+    print("DEBUG: Phase 2 - Detailed scan of SIP-responsive IPs")
+    devices = []
+    completed = 0
+    total_phase2 = len(sip_responsive_ips)
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Create tasks for second phase (all ports, only for SIP-responsive IPs)
+        print("DEBUG: Creating detailed scan tasks...")
+        future_to_ip = {}
+        for ip in sip_responsive_ips:
+            future = executor.submit(
+                scan_ip, 
+                ip, 
+                ports=VIDEO_ENDPOINT_PORTS,  # Check all ports in second phase
+                timeout=0.5,
+                force_endpoint=ip in force_endpoints,
+                username=username,
+                password=password
+            )
+            future_to_ip[future] = ip
+        
+        print(f"DEBUG: Submitted {len(future_to_ip)} detailed scan tasks")
+        
+        # Process results as they complete
+        for future in concurrent.futures.as_completed(future_to_ip):
+            ip = future_to_ip[future]
+            completed += 1
+            if completed % 5 == 0 or completed == total_phase2:
+                print(f"DEBUG: Progress: {completed}/{total_phase2} IPs scanned in detail ({completed/total_phase2*100:.1f}%)")
+            try:
+                result = future.result()
+                if result:
+                    print(f"DEBUG: Detailed scan found device at {ip}")
+                    devices.append(result)
+            except Exception as e:
+                print(f"DEBUG: Error processing detailed scan result for {ip} - {str(e)}")
+    
+    return devices
+
+
 def scan_network(ip_range=None, max_workers=20, force_endpoints=None, username="admin", password="TANDBERG"):
     """
     Scan the local network for devices, with focus on video endpoints
@@ -243,6 +380,11 @@ def scan_network(ip_range=None, max_workers=20, force_endpoints=None, username="
         print(f"DEBUG: Successfully parsed network: {network}")
         host_count = sum(1 for _ in network.hosts())
         print(f"DEBUG: Network contains {host_count} host addresses to scan")
+        
+        # Check if we should use the optimized scanning method
+        if os.environ.get('USE_OPTIMIZED_SCAN', '').lower() == 'true':
+            print("DEBUG: Using optimized scanning method")
+            return scan_network_optimized(ip_range, max_workers, force_endpoints, username, password)
     except ValueError as e:
         print(f"Invalid IP range: {ip_range} - {str(e)}")
         return []
